@@ -1,0 +1,22 @@
+name: mellojoy-watch
+
+on:
+  schedule:
+    # 11:50 JST と 11:57 JST の2回トリガーして、GitHub側のスケジュール遅延に備える
+    - cron: "50 2 * * *"
+    - cron: "57 2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - run: python watch_and_notify.py
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
