@@ -6,17 +6,18 @@ GitHub Actions上で動かす、Mellojoy Japanの在庫監視スクリプト。
 (このスクリプト自身はカート投入や決済を一切行わない)
 """
 import os
-import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
 
 BASE_URL = "https://www.mellojoyjapan.com"
 POLL_INTERVAL_SEC = 1.5
+SLEEP_CHECK_INTERVAL_SEC = 60  # 監視開始前の待機中、この間隔で時刻を確認する
 JST = ZoneInfo("Asia/Tokyo")
-HARD_STOP_HOUR_MIN = (12, 12)  # この時刻(JST)になったら諦めて終了
+WATCH_START_HOUR_MIN = (11, 59)  # この時刻(JST)から実際の監視(高頻度ポーリング)を始める
+HARD_STOP_HOUR_MIN = (12, 20)  # この時刻(JST)になったら諦めて終了
 
 NTFY_TOPIC = os.environ["NTFY_TOPIC"]
 NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
@@ -26,9 +27,17 @@ def now_jst() -> datetime:
     return datetime.now(JST)
 
 
-def past_hard_stop() -> bool:
+def today_at(hour: int, minute: int) -> datetime:
     n = now_jst()
-    return (n.hour, n.minute) >= HARD_STOP_HOUR_MIN
+    target = n.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target < n - timedelta(hours=1):
+        # トリガーが日付をまたいで極端に遅延した場合の保険(翌日の同時刻にはしない)
+        return n
+    return target
+
+
+def past_hard_stop() -> bool:
+    return now_jst() >= today_at(*HARD_STOP_HOUR_MIN)
 
 
 def find_available_variant():
@@ -62,11 +71,15 @@ def notify(found: dict) -> None:
 
 
 def main() -> None:
-    print(f"[{now_jst()}] 監視開始。締切: JST {HARD_STOP_HOUR_MIN[0]:02d}:{HARD_STOP_HOUR_MIN[1]:02d}")
+    watch_start = today_at(*WATCH_START_HOUR_MIN)
+    hard_stop = today_at(*HARD_STOP_HOUR_MIN)
+    print(f"[{now_jst()}] ジョブ起動。監視開始予定: {watch_start} / 締切: {hard_stop}")
 
-    if past_hard_stop():
-        print(f"[{now_jst()}] すでに締切を過ぎているため終了します。")
-        sys.exit(0)
+    while now_jst() < watch_start:
+        remaining = (watch_start - now_jst()).total_seconds()
+        time.sleep(min(SLEEP_CHECK_INTERVAL_SEC, max(remaining, 0)))
+
+    print(f"[{now_jst()}] 高頻度ポーリングを開始します。")
 
     while not past_hard_stop():
         try:
