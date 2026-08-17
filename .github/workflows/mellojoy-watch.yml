@@ -2,15 +2,17 @@ name: mellojoy-watch
 
 on:
   schedule:
-    # 11:50 JST と 11:57 JST の2回トリガーして、GitHub側のスケジュール遅延に備える
-    - cron: "50 2 * * *"
-    - cron: "57 2 * * *"
+    # GitHub側の定時実行は数十分単位で遅延することがあるため、
+    # 監視対象の12:00より大幅に早い時刻(9:00, 9:30 JST)に起動し、
+    # スクリプト内部で11:59まで待機してから実際の監視を始める。
+    - cron: "0 0 * * *"
+    - cron: "30 0 * * *"
   workflow_dispatch: {}
 
 jobs:
   watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
