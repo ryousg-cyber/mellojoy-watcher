@@ -7,7 +7,7 @@ GitHub Actions上で動かす、Mellojoy Japanの在庫監視スクリプト。
 """
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
@@ -28,16 +28,7 @@ def now_jst() -> datetime:
 
 
 def today_at(hour: int, minute: int) -> datetime:
-    n = now_jst()
-    target = n.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target < n - timedelta(hours=1):
-        # トリガーが日付をまたいで極端に遅延した場合の保険(翌日の同時刻にはしない)
-        return n
-    return target
-
-
-def past_hard_stop() -> bool:
-    return now_jst() >= today_at(*HARD_STOP_HOUR_MIN)
+    return now_jst().replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
 def find_available_variant():
@@ -81,7 +72,7 @@ def main() -> None:
 
     print(f"[{now_jst()}] 高頻度ポーリングを開始します。")
 
-    while not past_hard_stop():
+    while now_jst() < hard_stop:
         try:
             found = find_available_variant()
         except requests.RequestException as e:
