@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 BASE_URL = "https://www.mellojoyjapan.com"
-POLL_INTERVAL_SEC = 1.5
+POLL_INTERVAL_SEC = 1.0
 SLEEP_CHECK_INTERVAL_SEC = 60  # 監視開始前の待機中、この間隔で時刻を確認する
 JST = ZoneInfo("Asia/Tokyo")
 WATCH_START_HOUR_MIN = (11, 59)  # この時刻(JST)から実際の監視(高頻度ポーリング)を始める
