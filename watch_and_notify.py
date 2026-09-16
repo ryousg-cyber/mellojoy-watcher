@@ -19,6 +19,13 @@ JST = ZoneInfo("Asia/Tokyo")
 WATCH_START_HOUR_MIN = (11, 59)  # この時刻(JST)から実際の監視(高頻度ポーリング)を始める
 HARD_STOP_HOUR_MIN = (12, 20)  # この時刻(JST)になったら諦めて終了
 
+# 優先して狙う商品(Shopifyのhandle)。上から順に優先度が高い。
+# どちらも売り切れのままなら、他の商品が復活した時点でそれを採用する(フォールバック)。
+TARGET_HANDLES = [
+    "mellojoy-ムースクリーム-バター-new-z002-1-ブラインドボックスのおもちゃ",  # 優先1: バター
+    "z071-6-ムースクリーム-桜-ムースクリーム-サクラ-ムースクリーム-桜-12歳以上対象",  # 優先2: うさぎ桜餅
+]
+
 NTFY_TOPIC = os.environ["NTFY_TOPIC"]
 NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
 
@@ -31,18 +38,37 @@ def today_at(hour: int, minute: int) -> datetime:
     return now_jst().replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
+def _first_available_variant(product: dict):
+    for variant in product.get("variants", []):
+        if variant.get("available"):
+            return {
+                "product_title": product["title"],
+                "variant_id": variant["id"],
+                "price": variant["price"],
+            }
+    return None
+
+
 def find_available_variant():
     resp = requests.get(f"{BASE_URL}/products.json?limit=250", timeout=10)
     resp.raise_for_status()
     data = resp.json()
+    products_by_handle = {p["handle"]: p for p in data.get("products", [])}
+
+    # 優先対象を順番にチェック
+    for handle in TARGET_HANDLES:
+        product = products_by_handle.get(handle)
+        if not product:
+            continue
+        found = _first_available_variant(product)
+        if found:
+            return found
+
+    # 優先対象がどちらも無ければ、他の商品にフォールバック
     for product in data.get("products", []):
-        for variant in product.get("variants", []):
-            if variant.get("available"):
-                return {
-                    "product_title": product["title"],
-                    "variant_id": variant["id"],
-                    "price": variant["price"],
-                }
+        found = _first_available_variant(product)
+        if found:
+            return found
     return None
 
 
