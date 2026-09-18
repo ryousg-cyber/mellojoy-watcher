@@ -6,11 +6,22 @@ GitHub Actions上で動かす、Mellojoy Japanの在庫監視スクリプト。
 (このスクリプト自身はカート投入や決済を一切行わない)
 """
 import os
+import socket
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
+import urllib3.util.connection as urllib3_cn
+
+# GitHub Actionsランナーで、IPv6経路が使えず"Network is unreachable"に
+# なることがある(実際に2026-09-18に発生し、通知処理がクラッシュした)。
+# DNS解決をIPv4のみに限定し、この種の失敗を避ける。
+def _allowed_gai_family():
+    return socket.AF_INET
+
+
+urllib3_cn.allowed_gai_family = _allowed_gai_family
 
 BASE_URL = "https://www.mellojoyjapan.com"
 POLL_INTERVAL_SEC = 1.0
@@ -18,6 +29,8 @@ SLEEP_CHECK_INTERVAL_SEC = 60  # 監視開始前の待機中、この間隔で�
 JST = ZoneInfo("Asia/Tokyo")
 WATCH_START_HOUR_MIN = (11, 59)  # この時刻(JST)から実際の監視(高頻度ポーリング)を始める
 HARD_STOP_HOUR_MIN = (12, 20)  # この時刻(JST)になったら諦めて終了
+NOTIFY_MAX_RETRIES = 5
+NOTIFY_RETRY_WAIT_SEC = 3
 
 # 優先して狙う商品(Shopifyのhandle)。上から順に優先度が高い。
 # どちらも売り切れのままなら、他の商品が復活した時点でそれを採用する(フォールバック)。
@@ -74,17 +87,30 @@ def find_available_variant():
 
 def notify(found: dict) -> None:
     cart_link = f"{BASE_URL}/cart/{found['variant_id']}:1"
-    requests.post(
-        NTFY_URL,
-        data=f"{found['product_title']} (¥{found['price']})\nタップして即カート＆決済へ".encode("utf-8"),
-        headers={
-            "Title": "Mellojoy 在庫あり！".encode("utf-8"),
-            "Priority": "urgent",
-            "Tags": "rotating_light",
-            "Click": cart_link,
-        },
-        timeout=10,
-    )
+    # 通知が最後まで送れなくても、ログにさえ残ればここから手動で開ける保険
+    print(f"[{now_jst()}] カートリンク(手動フォールバック用): {cart_link}")
+
+    payload = f"{found['product_title']} (¥{found['price']})\nタップして即カート＆決済へ".encode("utf-8")
+    headers = {
+        "Title": "Mellojoy 在庫あり！".encode("utf-8"),
+        "Priority": "urgent",
+        "Tags": "rotating_light",
+        "Click": cart_link,
+    }
+
+    last_error = None
+    for attempt in range(1, NOTIFY_MAX_RETRIES + 1):
+        try:
+            requests.post(NTFY_URL, data=payload, headers=headers, timeout=10)
+            print(f"[{now_jst()}] ntfy通知を送信しました(試行{attempt}回目)。")
+            return
+        except requests.RequestException as e:
+            last_error = e
+            print(f"[{now_jst()}] ntfy送信失敗(試行{attempt}/{NOTIFY_MAX_RETRIES}回目): {e}")
+            if attempt < NOTIFY_MAX_RETRIES:
+                time.sleep(NOTIFY_RETRY_WAIT_SEC)
+
+    raise RuntimeError(f"ntfy通知に{NOTIFY_MAX_RETRIES}回失敗しました。最後のエラー: {last_error}")
 
 
 def main() -> None:
