@@ -2,17 +2,19 @@ name: mellojoy-watch
 
 on:
   schedule:
-    # GitHub側の定時実行は数十分単位で遅延することがあるため、
-    # 監視対象の12:00より大幅に早い時刻(9:00, 9:30 JST)に起動し、
+    # GitHub側の定時実行は実測で2〜6時間以上遅延することがある(2026-10-06時点で確認済み)。
+    # 監視対象の12:00より大幅に早い時刻(7:00, 8:00 JST)に起動し、
     # スクリプト内部で11:59まで待機してから実際の監視を始める。
-    - cron: "0 0 * * *"
-    - cron: "30 0 * * *"
+    # 7:00 JST起動でも締切12:20までは約5時間20分あり、
+    # GitHub Actionsの1ジョブ上限(6時間/360分)にまだ収まる範囲。
+    - cron: "0 22 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch: {}
 
 jobs:
   watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
